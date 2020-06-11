@@ -1,4 +1,4 @@
-import { ERC20BridgeSource } from '@0x/asset-swapper';
+import { ERC20BridgeSource, ExtensionContractType } from '@0x/asset-swapper';
 import { AcceptedOrderInfo, RejectedOrderInfo } from '@0x/mesh-rpc-client';
 import { APIOrder, OrdersChannelSubscriptionOpts, SignedOrder, UpdateOrdersChannelMessage } from '@0x/types';
 import { BigNumber } from '@0x/utils';
@@ -308,6 +308,7 @@ export interface GetSwapQuoteResponse {
     sources: GetSwapQuoteResponseLiquiditySource[];
     gas?: BigNumber;
     from?: string;
+    extensionContractType: ExtensionContractType
 }
 
 export interface Price {

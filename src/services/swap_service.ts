@@ -9,6 +9,7 @@ import {
     SwapQuoteOrdersBreakdown,
     SwapQuoter,
 } from '@0x/asset-swapper';
+import { getContractAddressesForChainOrThrow } from '@0x/contract-addresses';
 import { assetDataUtils, SupportedProvider } from '@0x/order-utils';
 import { AbiEncoder, BigNumber, decodeThrownErrorAsRevertError, RevertError } from '@0x/utils';
 import { TxData, Web3Wrapper } from '@0x/web3-wrapper';
@@ -81,9 +82,22 @@ export class SwapService {
             protocolFeeInWeiAmount: protocolFee,
         } = attributedSwapQuote.bestCaseQuoteInfo;
         const { orders, gasPrice, sourceBreakdown } = attributedSwapQuote;
+        const coordinatorAddress = getContractAddressesForChainOrThrow(CHAIN_ID).coordinator;
+        const isCoordinated: boolean = orders.reduce((coordinated: boolean, order) => 
+            coordinated || order.senderAddress === coordinatorAddress, false
+        );
+
+        let extensionContractType: ExtensionContractType;
 
         // If ETH was specified as the token to sell then we use the Forwarder
-        const extensionContractType = isETHSell ? ExtensionContractType.Forwarder : ExtensionContractType.None;
+        // tslint:disable-next-line:no-use-before-define
+        if (!isCoordinated) {
+            extensionContractType = isETHSell ? ExtensionContractType.Forwarder : ExtensionContractType.None;
+        }
+        else {
+            extensionContractType = ExtensionContractType.Coordinator
+        }
+
         const {
             calldataHexString: data,
             ethAmount: value,
@@ -95,7 +109,7 @@ export class SwapService {
         const affiliatedData = this._attributeCallData(data, affiliateAddress);
 
         let gas;
-        if (from) {
+        if (from && extensionContractType !== ExtensionContractType.Coordinator) {
             // Force a revert error if the takerAddress does not have enough ETH.
             const txDataValue = extensionContractType === ExtensionContractType.Forwarder
                 ? BigNumber.min(value, await this._web3Wrapper.getBalanceInWeiAsync(from))
@@ -133,6 +147,7 @@ export class SwapService {
             sellAmount: totalTakerAssetAmount,
             sources: this._convertSourceBreakdownToArray(sourceBreakdown),
             orders: this._cleanSignedOrderFields(orders),
+            extensionContractType: extensionContractType,
         };
         return apiSwapQuote;
     }

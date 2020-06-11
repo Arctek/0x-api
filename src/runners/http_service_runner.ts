@@ -1,6 +1,7 @@
 import bodyParser = require('body-parser');
 import * as cors from 'cors';
 import * as express from 'express';
+import * as fs from 'fs';
 // tslint:disable-next-line:no-implicit-dependencies
 import * as core from 'express-serve-static-core';
 import { Server } from 'http';
@@ -45,18 +46,40 @@ if (require.main === module) {
  */
 export async function runHttpServiceAsync(
     dependencies: AppDependencies,
-    config: { HTTP_PORT: string },
+    config: { HTTP_PORT: string, SERVER_MODE: "PORT" | "SOCKET", SOCKET_FILE?: string },
     _app?: core.Express,
 ): Promise<Server> {
     const app = _app || express();
     app.use(requestLogger());
     app.use(cors());
     app.use(bodyParser.json());
+    app.use(bodyParser.urlencoded({ extended: true }));
+
+    app.disable('x-powered-by');
+    app.set('etag', false);
 
     app.get('/', rootHandler);
-    const server = app.listen(config.HTTP_PORT, () => {
-        logger.info(`API (HTTP) listening on port ${config.HTTP_PORT}!`);
-    });
+
+    let server: Server;
+
+    if (config.SERVER_MODE === "SOCKET") {
+        try {
+            fs.unlinkSync(config.SOCKET_FILE as string);
+        } catch (err) {}
+
+        server = app.listen(config.SOCKET_FILE, () => {
+            logger.log(`0x API (HTTP) listeningon socket ${config.SOCKET_FILE}!`);
+
+            try {
+                fs.chmodSync(config.SOCKET_FILE as string, '777');
+            } catch (err) {}
+        });
+    }
+    else {
+        server = app.listen(config.HTTP_PORT, () => {
+            logger.log(`0x API (HTTP) listening on port ${config.HTTP_PORT}!`);
+        });
+    }
 
     // staking http service
     app.use(STAKING_PATH, createStakingRouter(dependencies.stakingDataService));

@@ -4,12 +4,14 @@ import { ERC20BridgeSource, SwapQuoteRequestOpts } from '@0x/asset-swapper';
 import { BigNumber } from '@0x/utils';
 import * as _ from 'lodash';
 
-import { DEFAULT_LOCAL_POSTGRES_URI, DEFAULT_LOGGER_INCLUDE_TIMESTAMP, NULL_ADDRESS, NULL_BYTES } from './constants';
+import { DEFAULT_LOCAL_DATABASE_URI, DEFAULT_LOGGER_INCLUDE_TIMESTAMP, NULL_ADDRESS, NULL_BYTES } from './constants';
 import { TokenMetadatasForChains } from './token_metadatas_for_networks';
 import { ChainId } from './types';
 
 enum EnvVarType {
+    ServerMode,
     Port,
+    SocketFile,
     ChainId,
     FeeRecipient,
     UnitAmount,
@@ -19,10 +21,18 @@ enum EnvVarType {
     FeeAssetData,
 }
 
+// Server mode to listen with. Port or Socket file
+export const SERVER_MODE = _.isEmpty(process.env.SERVER_MODE)
+    ? "HTTP"
+    : assertEnvVarType('SERVER_MODE', process.env.SERVER_MODE, EnvVarType.ServerMode);
 // Network port to listen on
 export const HTTP_PORT = _.isEmpty(process.env.HTTP_PORT)
     ? 3000
     : assertEnvVarType('HTTP_PORT', process.env.HTTP_PORT, EnvVarType.Port);
+// Server mode to listen with. Port or Socket file
+export const SOCKET_FILE = _.isEmpty(process.env.SOCKET_FILE)
+    ? null
+    : assertEnvVarType('SOCKET_FILE', process.env.SOCKET_FILE, EnvVarType.SocketFile);
 // Default chain id to use when not specified
 export const CHAIN_ID: ChainId = _.isEmpty(process.env.CHAIN_ID)
     ? ChainId.Kovan
@@ -61,9 +71,9 @@ export const TAKER_FEE_ASSET_DATA = _.isEmpty(process.env.TAKER_FEE_ASSET_DATA)
     ? NULL_BYTES
     : assertEnvVarType('TAKER_FEE_ASSET_DATA', process.env.TAKER_FEE_ASSET_DATA, EnvVarType.FeeAssetData);
 
-export const POSTGRES_URI = _.isEmpty(process.env.POSTGRES_URI)
-    ? DEFAULT_LOCAL_POSTGRES_URI
-    : assertEnvVarType('POSTGRES_URI', process.env.POSTGRES_URI, EnvVarType.Url);
+export const DATABASE_URI = _.isEmpty(process.env.DATABASE_URI)
+    ? DEFAULT_LOCAL_DATABASE_URI
+    : assertEnvVarType('DATABASE_URI', process.env.DATABASE_URI, EnvVarType.Url);
 // Should the logger include time field in the output logs, defaults to true.
 export const LOGGER_INCLUDE_TIMESTAMP = _.isEmpty(process.env.LOGGER_INCLUDE_TIMESTAMP)
     ? DEFAULT_LOGGER_INCLUDE_TIMESTAMP

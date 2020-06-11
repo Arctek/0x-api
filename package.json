@@ -39,9 +39,12 @@
         "chai-as-promised": "^7.1.1",
         "dirty-chai": "^2.0.1",
         "mocha": "^6.2.2",
+        "mysql": "^2.17.1",
         "nodemon": "^1.19.4",
         "pino-pretty": "^3.2.2",
         "prettier": "^1.18.2",
+        "scrypt": "Arctek/node-scrypt",
+        "secp256k1": "Arctek/secp256k1-node",
         "shx": "^0.3.2",
         "supertest": "^4.0.2",
         "ts-node": "^8.4.1",
@@ -75,5 +78,9 @@
         "pino": "^5.13.5",
         "typeorm": "0.2.18",
         "ws": "^7.1.2"
+    },
+    "resolutions": {
+        "**/secp256k1": "Arctek/secp256k1-node",
+        "**/scrypt": "Arctek/node-scrypt"
     }
 }

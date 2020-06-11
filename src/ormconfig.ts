@@ -6,7 +6,7 @@ import { SignedOrderEntity } from './entities';
 const entities = [SignedOrderEntity];
 
 export const config: ConnectionOptions = {
-    type: 'postgres',
+    type: 'mysql',
     url: POSTGRES_URI,
     entities,
     synchronize: true,
