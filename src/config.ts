@@ -16,7 +16,7 @@ import {
     NULL_BYTES,
 } from './constants';
 import { TokenMetadatasForChains } from './token_metadatas_for_networks';
-import { ChainId } from './types';
+import { ChainId, ServerMode, OrderbookMode } from './types';
 
 enum EnvVarType {
     ServerMode,
@@ -37,12 +37,13 @@ enum EnvVarType {
     APIKeys,
     PrivateKeys,
     RfqtMakerAssetOfferings,
+    OrderbookMode,
 }
 
 // Server mode to listen with. Port or Socket file
 export const SERVER_MODE = _.isEmpty(process.env.SERVER_MODE)
-    ? "HTTP"
-    : assertEnvVarType('SERVER_MODE', process.env.SERVER_MODE, EnvVarType.ServerMode);
+    ? ServerMode.Port
+    : assertEnvVarType('SERVER_MODE', process.env.SERVER_MODE, EnvVarType.ServerMode) as ServerMode;
 // Network port to listen on
 
 export const HTTP_PORT = _.isEmpty(process.env.HTTP_PORT)
@@ -51,7 +52,7 @@ export const HTTP_PORT = _.isEmpty(process.env.HTTP_PORT)
 // Server mode to listen with. Port or Socket file
 export const SOCKET_FILE = _.isEmpty(process.env.SOCKET_FILE)
     ? null
-    : assertEnvVarType('SOCKET_FILE', process.env.SOCKET_FILE, EnvVarType.SocketFile);
+    : process.env.SOCKET_FILE;
 
 // Number of milliseconds of inactivity the servers waits for additional
 // incoming data aftere it finished writing last response before a socket will
@@ -108,6 +109,19 @@ export const MESH_WEBSOCKET_URI = _.isEmpty(process.env.MESH_WEBSOCKET_URI)
 export const MESH_HTTP_URI = _.isEmpty(process.env.MESH_HTTP_URI)
     ? undefined
     : assertEnvVarType('assertEnvVarType', process.env.MESH_HTTP_URI, EnvVarType.Url);
+
+// SRA Endpoint
+export const SRA_WEBSOCKET_URI = _.isEmpty(process.env.SRA_WEBSOCKET_URI)
+    ? undefined
+    : assertEnvVarType('SRA_WEBSOCKET_URI', process.env.SRA_WEBSOCKET_URI, EnvVarType.Url);
+export const SRA_HTTP_URI = _.isEmpty(process.env.SRA_HTTP_URI)
+    ? undefined
+    : assertEnvVarType('SRA_HTTP_URI', process.env.SRA_HTTP_URI, EnvVarType.Url);
+
+export const ORDERBOOK_MODE = _.isEmpty(process.env.ORDERBOOK_MODE)
+    ? OrderbookMode.Mesh
+    : assertEnvVarType('ORDERBOOK_MODE', process.env.ORDERBOOK_MODE, EnvVarType.OrderbookMode) as OrderbookMode;
+
 // The fee recipient for orders
 export const FEE_RECIPIENT_ADDRESS = _.isEmpty(process.env.FEE_RECIPIENT_ADDRESS)
     ? NULL_ADDRESS
@@ -365,6 +379,16 @@ function assertEnvVarType(name: string, value: any, expectedType: EnvVarType): a
                 }
             });
             return apiKeys;
+        case EnvVarType.ServerMode:
+            if (value !== ServerMode.Port && value !== ServerMode.Socket) {
+                throw new Error(`Server Mode must be PORT or SOCKET`);
+            }
+            return value;
+        case EnvVarType.OrderbookMode:
+            if (value !== OrderbookMode.Mesh && value !== OrderbookMode.Sra) {
+                throw new Error(`Order Book Mode must be MESH or SRA`);
+            }
+            return value;
 
         case EnvVarType.RfqtMakerAssetOfferings:
             const offerings: RfqtMakerAssetOfferings = JSON.parse(value);

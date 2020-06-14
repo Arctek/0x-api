@@ -15,6 +15,16 @@ export enum OrderWatcherLifeCycleEvents {
     Updated,
 }
 
+export enum ServerMode {
+    Port = "PORT",
+    Socket = "SOCKET",
+}
+
+export enum OrderbookMode {
+    Mesh = "MESH",
+    Sra = "SRA",
+}
+
 export type onOrdersUpdateCallback = (orders: APIOrderWithMetaData[]) => void;
 
 export interface AcceptedRejectedResults {

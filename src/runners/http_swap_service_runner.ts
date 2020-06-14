@@ -20,6 +20,7 @@ import { errorHandler } from '../middleware/error_handling';
 import { requestLogger } from '../middleware/request_logger';
 import { createSwapRouter } from '../routers/swap_router';
 import { providerUtils } from '../utils/provider_utils';
+import { ServerMode } from '../types';
 
 process.on('uncaughtException', err => {
     logger.error(err);
@@ -44,7 +45,7 @@ export async function runHttpServiceAsync(
     dependencies: AppDependencies,
     config: { 
         HTTP_PORT: string; 
-        SERVER_MODE: "PORT" | "SOCKET";
+        SERVER_MODE: ServerMode;
         SOCKET_FILE?: string;
         HTTP_KEEP_ALIVE_TIMEOUT: number; 
         HTTP_HEADERS_TIMEOUT: number 
@@ -64,7 +65,7 @@ export async function runHttpServiceAsync(
 
     let server: Server;
 
-    if (config.SERVER_MODE === "SOCKET") {
+    if (config.SERVER_MODE === ServerMode.Socket) {
         try {
             fs.unlinkSync(config.SOCKET_FILE as string);
         } catch (err) {}

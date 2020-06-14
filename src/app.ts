@@ -1,4 +1,5 @@
 import { Orderbook, SupportedProvider } from '@0x/asset-swapper';
+import { BaseOrderProvider, SRAWebsocketOrderProvider, SRAPollingOrderProvider } from '@0x/orderbook';
 import * as express from 'express';
 import { Server } from 'http';
 import { Connection } from 'typeorm';
@@ -18,6 +19,7 @@ import { TransactionWatcherSignerService } from './services/transaction_watcher_
 import { WebsocketSRAOpts } from './types';
 import { MeshClient } from './utils/mesh_client';
 import { OrderStoreDbAdapter } from './utils/order_store_db_adapter';
+import { OrderbookMode } from './types';
 
 export interface AppDependencies {
     connection: Connection;
@@ -44,6 +46,9 @@ export async function getDefaultAppDependenciesAsync(
         // not providing a websocket URI
         MESH_WEBSOCKET_URI?: string;
         MESH_HTTP_URI?: string;
+        ORDERBOOK_MODE: OrderbookMode;
+        SRA_WEBSOCKET_URI?: string;
+        SRA_HTTP_URI?: string;
         ENABLE_PROMETHEUS_METRICS: boolean;
     },
 ): Promise<AppDependencies> {
@@ -64,8 +69,15 @@ export async function getDefaultAppDependenciesAsync(
     const orderBookService = new OrderBookService(connection, meshClient);
 
     let swapService: SwapService | undefined;
+
     try {
-        swapService = createSwapServiceFromOrderBookService(orderBookService, provider);
+        swapService = createSwapServiceFromOrderBookService(
+            orderBookService,
+            provider,
+            config.ORDERBOOK_MODE,
+            config.SRA_WEBSOCKET_URI,
+            config.SRA_HTTP_URI,
+        );
     } catch (err) {
         logger.error(err.stack);
     }
@@ -134,9 +146,29 @@ export async function getAppAsync(
 export function createSwapServiceFromOrderBookService(
     orderBookService: OrderBookService,
     provider: SupportedProvider,
+    orderbookMode: OrderbookMode,
+    sraHttpUri?: string,
+    sraWebsocketUri?: string,
 ): SwapService {
     const orderStore = new OrderStoreDbAdapter(orderBookService);
-    const orderProvider = new OrderBookServiceOrderProvider(orderStore, orderBookService);
+    let orderProvider: BaseOrderProvider;
+    if (orderbookMode === OrderbookMode.Mesh) {
+        orderProvider = new OrderBookServiceOrderProvider(orderStore, orderBookService);
+    }
+    else if (orderbookMode === OrderbookMode.Sra) {
+        if (sraWebsocketUri) {
+            orderProvider = new SRAWebsocketOrderProvider({
+                websocketEndpoint: sraWebsocketUri,
+                httpEndpoint: sraHttpUri
+            }, orderStore);
+        }
+        else {
+            orderProvider = new SRAPollingOrderProvider({
+                httpEndpoint: sraHttpUri,
+                pollingIntervalMs: 30000
+            }, orderStore);
+        }
+    }
     const orderBook = new Orderbook(orderProvider, orderStore);
     return new SwapService(orderBook, provider);
 }

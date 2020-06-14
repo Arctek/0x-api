@@ -20,7 +20,7 @@ import { MetricsService } from '../src/services/metrics_service';
 import { OrderBookService } from '../src/services/orderbook_service';
 import { StakingDataService } from '../src/services/staking_data_service';
 import { TransactionWatcherSignerService } from '../src/services/transaction_watcher_signer_service';
-import { TransactionStates, TransactionWatcherSignerServiceConfig } from '../src/types';
+import { TransactionStates, TransactionWatcherSignerServiceConfig, OrderbookMode } from '../src/types';
 import { MeshClient } from '../src/utils/mesh_client';
 import { utils } from '../src/utils/utils';
 
@@ -78,7 +78,7 @@ describe('transaction watcher service', () => {
         const metaTransactionService = createMetaTxnServiceFromOrderBookService(orderBookService, provider, connection);
         const stakingDataService = new StakingDataService(connection);
         const websocketOpts = { path: SRA_PATH };
-        const swapService = createSwapServiceFromOrderBookService(orderBookService, provider);
+        const swapService = createSwapServiceFromOrderBookService(orderBookService, provider, OrderbookMode.Mesh);
         const meshClient = new MeshClient(config.MESH_WEBSOCKET_URI, config.MESH_HTTP_URI);
         const metricsService = new MetricsService();
         metaTxnUser = new TestMetaTxnUser();
