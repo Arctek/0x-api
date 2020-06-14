@@ -10,10 +10,12 @@ import {
     ERC20BridgeAssetData,
     ERC721AssetData,
     MultiAssetData,
+    OrdersRequestOpts,
     SignedOrder,
     StaticCallAssetData,
 } from '@0x/types';
 import { BigNumber, errorUtils } from '@0x/utils';
+import { Connection } from 'typeorm';
 
 import {
     CHAIN_ID,
@@ -21,12 +23,17 @@ import {
     FEE_RECIPIENT_ADDRESS,
     MAKER_FEE_ASSET_DATA,
     MAKER_FEE_UNIT_AMOUNT,
+    PINNED_MM_ADDRESSES,
+    PINNED_POOL_IDS,
+    SRA_ORDER_EXPIRATION_BUFFER_SECONDS,
     TAKER_FEE_ASSET_DATA,
     TAKER_FEE_UNIT_AMOUNT,
 } from '../config';
-import { MAX_TOKEN_SUPPLY_POSSIBLE, NULL_ADDRESS } from '../constants';
+import { MAX_TOKEN_SUPPLY_POSSIBLE, NULL_ADDRESS, ONE_SECOND_MS } from '../constants';
 import { SignedOrderEntity } from '../entities';
-import { APIOrderWithMetaData } from '../types';
+import { logger } from '../logger';
+import * as queries from '../queries/staking_queries';
+import { APIOrderWithMetaData, PinResult, RawEpochPoolStats } from '../types';
 
 const DEFAULT_ERC721_ASSET = {
     minAmount: new BigNumber(0),
@@ -78,6 +85,13 @@ const assetDataToAsset = (assetData: string): Asset => {
 };
 
 export const orderUtils = {
+    isIgnoredOrder: (addressesToIgnore: string[], apiOrder: APIOrder): boolean => {
+        return (
+            addressesToIgnore.includes(apiOrder.order.makerAddress) ||
+            orderUtils.includesTokenAddresses(apiOrder.order.makerAssetData, addressesToIgnore) ||
+            orderUtils.includesTokenAddresses(apiOrder.order.takerAssetData, addressesToIgnore)
+        );
+    },
     isMultiAssetData: (decodedAssetData: AssetData): decodedAssetData is MultiAssetData => {
         return decodedAssetData.assetProxyId === AssetProxyId.MultiAsset;
     },
@@ -98,6 +112,25 @@ export const orderUtils = {
             default:
                 return false;
         }
+    },
+    isFreshOrder: (
+        apiOrder: APIOrder,
+        expirationBufferSeconds: number = SRA_ORDER_EXPIRATION_BUFFER_SECONDS,
+    ): boolean => {
+        const dateNowSeconds = Date.now() / ONE_SECOND_MS;
+        return apiOrder.order.expirationTimeSeconds.toNumber() > dateNowSeconds + expirationBufferSeconds;
+    },
+    groupByFreshness: <T extends APIOrder>(
+        apiOrders: T[],
+        expirationBufferSeconds: number,
+    ): { fresh: T[]; expired: T[] } => {
+        const accumulator = { fresh: [] as T[], expired: [] as T[] };
+        for (const order of apiOrders) {
+            orderUtils.isFreshOrder(order, expirationBufferSeconds)
+                ? accumulator.fresh.push(order)
+                : accumulator.expired.push(order);
+        }
+        return accumulator;
     },
     compareAskOrder: (orderA: SignedOrder, orderB: SignedOrder): number => {
         const orderAPrice = orderA.takerAssetAmount.div(orderA.makerAssetAmount);
@@ -123,19 +156,22 @@ export const orderUtils = {
         }
         return orderA.expirationTimeSeconds.comparedTo(orderB.expirationTimeSeconds);
     },
-    includesTokenAddress: (assetData: string, tokenAddress: string): boolean => {
+    includesTokenAddresses: (assetData: string, tokenAddresses: string[]): boolean => {
         const decodedAssetData = assetDataUtils.decodeAssetDataOrThrow(assetData);
         if (orderUtils.isMultiAssetData(decodedAssetData)) {
             for (const [, nestedAssetDataElement] of decodedAssetData.nestedAssetData.entries()) {
-                if (orderUtils.includesTokenAddress(nestedAssetDataElement, tokenAddress)) {
+                if (orderUtils.includesTokenAddresses(nestedAssetDataElement, tokenAddresses)) {
                     return true;
                 }
             }
             return false;
         } else if (orderUtils.isTokenAssetData(decodedAssetData)) {
-            return decodedAssetData.tokenAddress === tokenAddress;
+            return tokenAddresses.find(a => a === decodedAssetData.tokenAddress) !== undefined;
         }
         return false;
+    },
+    includesTokenAddress: (assetData: string, tokenAddress: string): boolean => {
+        return orderUtils.includesTokenAddresses(assetData, [tokenAddress]);
     },
     deserializeOrder: (signedOrderEntity: Required<SignedOrderEntity>): SignedOrder => {
         const signedOrder: SignedOrder = {
@@ -211,5 +247,73 @@ export const orderUtils = {
             takerFeeAssetData: TAKER_FEE_ASSET_DATA,
         };
         return orderConfigResponse;
+    },
+    filterOrders: (apiOrders: APIOrder[], filters: OrdersRequestOpts): APIOrder[] => {
+        let filteredOrders = apiOrders;
+        const { traderAddress, makerAssetAddress, takerAssetAddress, makerAssetProxyId, takerAssetProxyId } = filters;
+        if (traderAddress) {
+            filteredOrders = filteredOrders.filter(
+                apiOrder =>
+                    apiOrder.order.makerAddress === traderAddress || apiOrder.order.takerAddress === traderAddress,
+            );
+        }
+        if (makerAssetAddress) {
+            filteredOrders = filteredOrders.filter(apiOrder =>
+                orderUtils.includesTokenAddress(apiOrder.order.makerAssetData, makerAssetAddress),
+            );
+        }
+        if (takerAssetAddress) {
+            filteredOrders = filteredOrders.filter(apiOrder =>
+                orderUtils.includesTokenAddress(apiOrder.order.takerAssetData, takerAssetAddress),
+            );
+        }
+        if (makerAssetProxyId) {
+            filteredOrders = filteredOrders.filter(
+                apiOrder =>
+                    assetDataUtils.decodeAssetDataOrThrow(apiOrder.order.makerAssetData).assetProxyId ===
+                    makerAssetProxyId,
+            );
+        }
+        if (takerAssetProxyId) {
+            filteredOrders = filteredOrders.filter(
+                apiOrder =>
+                    assetDataUtils.decodeAssetDataOrThrow(apiOrder.order.takerAssetData).assetProxyId ===
+                    takerAssetProxyId,
+            );
+        }
+        return filteredOrders;
+    },
+    // splitOrdersByPinning splits the orders into those we wish to pin in our Mesh node and
+    // those we wish not to pin. We wish to pin the orders of MMers with a lot of ZRX at stake and
+    // who have a track record of acting benevolently.
+    async splitOrdersByPinningAsync(connection: Connection, signedOrders: SignedOrder[]): Promise<PinResult> {
+        let currentPoolStats = [];
+        // HACK(jalextowle): This query will fail when running against Ganache, so we
+        // skip it an only use pinned MMers. A deployed staking system that allows this
+        // functionality to be tested would improve the testing infrastructure.
+        try {
+            currentPoolStats = await connection.query(queries.currentEpochPoolsStatsQuery);
+        } catch (error) {
+            logger.warn(`currentEpochPoolsStatsQuery threw an error: ${error}`);
+        }
+        let makerAddresses: string[] = PINNED_MM_ADDRESSES;
+        currentPoolStats.forEach((poolStats: RawEpochPoolStats) => {
+            if (!PINNED_POOL_IDS.includes(poolStats.pool_id)) {
+                return;
+            }
+            makerAddresses = [...makerAddresses, ...poolStats.maker_addresses];
+        });
+        const pinResult: PinResult = {
+            pin: [],
+            doNotPin: [],
+        };
+        signedOrders.forEach(signedOrder => {
+            if (makerAddresses.includes(signedOrder.makerAddress)) {
+                pinResult.pin.push(signedOrder);
+            } else {
+                pinResult.doNotPin.push(signedOrder);
+            }
+        });
+        return pinResult;
     },
 };

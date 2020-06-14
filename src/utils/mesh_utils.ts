@@ -1,4 +1,3 @@
-import { SignedOrder } from '@0x/asset-swapper';
 import {
     AcceptedOrderInfo,
     OrderEvent,
@@ -6,33 +5,16 @@ import {
     OrderInfo,
     RejectedCode,
     RejectedOrderInfo,
-    ValidationResults,
-    WSClient,
 } from '@0x/mesh-rpc-client';
-import * as _ from 'lodash';
 
 import { ZERO } from '../constants';
 import { ValidationErrorCodes } from '../errors';
 import { logger } from '../logger';
 import { AddedRemovedUpdate, APIOrderWithMetaData } from '../types';
 
+import { orderUtils } from './order_utils';
+
 export const meshUtils = {
-    addOrdersToMeshAsync: async (
-        meshClient: WSClient,
-        orders: SignedOrder[],
-        batchSize: number = 100,
-    ): Promise<ValidationResults> => {
-        // Mesh rpc client can't handle a large amount of orders. This results in a fragmented
-        // send which Mesh cannot accept.
-        const validationResults: ValidationResults = { accepted: [], rejected: [] };
-        const chunks = _.chunk(orders, batchSize);
-        for (const chunk of chunks) {
-            const results = await meshClient.addOrdersAsync(chunk as any);
-            validationResults.accepted = [...validationResults.accepted, ...results.accepted];
-            validationResults.rejected = [...validationResults.rejected, ...results.rejected];
-        }
-        return validationResults;
-    },
     orderInfosToApiOrders: (
         orderEvent: Array<OrderEvent | AcceptedOrderInfo | RejectedOrderInfo | OrderInfo>,
     ): APIOrderWithMetaData[] => {
@@ -45,9 +27,8 @@ export const meshUtils = {
             ? (orderEvent as OrderEvent).fillableTakerAssetAmount
             : ZERO;
         return {
-            // TODO remove the any when packages are all published and updated with latest types
-            // tslint:disable-next-line:no-unnecessary-type-assertion
-            order: orderEvent.signedOrder as any,
+            // orderEvent.signedOrder comes from mesh with string fields, needs to be serialized into SignedOrder
+            order: orderUtils.deserializeOrder(orderEvent.signedOrder as any), // tslint:disable-line:no-unnecessary-type-assertion
             metaData: {
                 orderHash: orderEvent.orderHash,
                 remainingFillableTakerAssetAmount,
@@ -87,13 +68,16 @@ export const meshUtils = {
                     added.push(apiOrder);
                     break;
                 }
+                case OrderEventEndState.Invalid:
                 case OrderEventEndState.Cancelled:
                 case OrderEventEndState.Expired:
                 case OrderEventEndState.FullyFilled:
+                case OrderEventEndState.StoppedWatching:
                 case OrderEventEndState.Unfunded: {
                     removed.push(apiOrder);
                     break;
                 }
+                case OrderEventEndState.Unexpired:
                 case OrderEventEndState.FillabilityIncreased:
                 case OrderEventEndState.Filled: {
                     updated.push(apiOrder);

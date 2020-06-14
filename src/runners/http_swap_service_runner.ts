@@ -15,6 +15,7 @@ import * as defaultConfig from '../config';
 import { SWAP_PATH } from '../constants';
 import { rootHandler } from '../handlers/root_handler';
 import { logger } from '../logger';
+import { addressNormalizer } from '../middleware/address_normalizer';
 import { errorHandler } from '../middleware/error_handling';
 import { requestLogger } from '../middleware/request_logger';
 import { createSwapRouter } from '../routers/swap_router';
@@ -36,12 +37,18 @@ if (require.main === module) {
         const provider = providerUtils.createWeb3Provider(defaultConfig.ETHEREUM_RPC_URL);
         const dependencies = await getDefaultAppDependenciesAsync(provider, defaultConfig);
         await runHttpServiceAsync(dependencies, defaultConfig);
-    })().catch(error => logger.error(error));
+    })().catch(error => logger.error(error.stack));
 }
 
 export async function runHttpServiceAsync(
     dependencies: AppDependencies,
-    config: { HTTP_PORT: string, SERVER_MODE: "PORT" | "SOCKET", SOCKET_FILE?: string },
+    config: { 
+        HTTP_PORT: string; 
+        SERVER_MODE: "PORT" | "SOCKET";
+        SOCKET_FILE?: string;
+        HTTP_KEEP_ALIVE_TIMEOUT: number; 
+        HTTP_HEADERS_TIMEOUT: number 
+    },
     _app?: core.Express,
 ): Promise<Server> {
     const app = _app || express();
@@ -75,6 +82,10 @@ export async function runHttpServiceAsync(
             logger.log(`0x API (HTTP) listening on port ${config.HTTP_PORT}!`);
         });
     }
+    app.use(addressNormalizer);
+    app.get('/', rootHandler);
+    server.keepAliveTimeout = config.HTTP_KEEP_ALIVE_TIMEOUT;
+    server.headersTimeout = config.HTTP_HEADERS_TIMEOUT;
 
     if (dependencies.swapService) {
         app.use(SWAP_PATH, createSwapRouter(dependencies.swapService));

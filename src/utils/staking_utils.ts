@@ -4,9 +4,12 @@ import {
     AllTimeDelegatorPoolStats,
     AllTimePoolStats,
     AllTimeStakingStats,
+    DelegatorEvent,
     Epoch,
     EpochPoolStats,
+    EpochWithFees,
     Pool,
+    PoolAvgRewards,
     PoolEpochDelegatorStats,
     PoolEpochRewards,
     PoolProtocolFeesGenerated,
@@ -14,10 +17,13 @@ import {
     RawAllTimePoolRewards,
     RawAllTimeStakingStats,
     RawDelegatorDeposited,
+    RawDelegatorEvent,
     RawDelegatorStaked,
     RawEpoch,
     RawEpochPoolStats,
+    RawEpochWithFees,
     RawPool,
+    RawPoolAvgRewards,
     RawPoolEpochRewards,
     RawPoolProtocolFeesGenerated,
     RawPoolTotalProtocolFeesGenerated,
@@ -36,8 +42,40 @@ export const stakingUtils = {
             ending_block_timestamp,
             zrx_deposited,
             zrx_staked,
-            protocol_fees_generated_in_eth,
         } = rawEpoch;
+        let epochEnd: TransactionDate | undefined;
+        if (ending_transaction_hash && ending_block_number) {
+            epochEnd = {
+                blockNumber: parseInt(ending_block_number, 10),
+                txHash: ending_transaction_hash,
+                timestamp: ending_block_timestamp || undefined,
+            };
+        }
+        return {
+            epochId: parseInt(epoch_id, 10),
+            epochStart: {
+                blockNumber: parseInt(starting_block_number, 10),
+                txHash: starting_transaction_hash,
+                timestamp: starting_block_timestamp || undefined,
+            },
+            epochEnd,
+            zrxDeposited: Number(zrx_deposited || 0),
+            zrxStaked: Number(zrx_staked || 0),
+        };
+    },
+    getEpochWithFeesFromRaw: (rawEpochWithFees: RawEpochWithFees): EpochWithFees => {
+        const {
+            epoch_id,
+            starting_transaction_hash,
+            starting_block_number,
+            starting_block_timestamp,
+            ending_transaction_hash,
+            ending_block_number,
+            ending_block_timestamp,
+            zrx_deposited,
+            zrx_staked,
+            protocol_fees_generated_in_eth,
+        } = rawEpochWithFees;
         let epochEnd: TransactionDate | undefined;
         if (ending_transaction_hash && ending_block_number) {
             epochEnd = {
@@ -65,7 +103,7 @@ export const stakingUtils = {
             operator,
             created_at_block_number,
             created_at_transaction_hash,
-            verified,
+            isVerified,
             logo_url,
             location,
             bio,
@@ -83,7 +121,7 @@ export const stakingUtils = {
                 name: name || undefined,
                 bio: bio || undefined,
                 location: location || undefined,
-                isVerified: !!verified,
+                isVerified: !!isVerified,
                 logoUrl: logo_url || undefined,
                 websiteUrl: website || undefined,
             },
@@ -98,6 +136,8 @@ export const stakingUtils = {
             maker_addresses,
             operator_share,
             zrx_staked,
+            operator_zrx_staked,
+            member_zrx_staked,
             share_of_stake,
             total_protocol_fees_generated_in_eth,
             share_of_fees,
@@ -108,6 +148,8 @@ export const stakingUtils = {
         return {
             poolId: pool_id,
             zrxStaked: Number(zrx_staked || 0),
+            operatorZrxStaked: Number(operator_zrx_staked || 0),
+            memberZrxStaked: Number(member_zrx_staked || 0),
             shareOfStake: Number(share_of_stake),
             operatorShare: _.isNil(operator_share) ? undefined : Number(operator_share),
             approximateStakeRatio: approximate_stake_ratio ? Number(approximate_stake_ratio) : 0,
@@ -134,7 +176,11 @@ export const stakingUtils = {
     getPoolProtocolFeesGeneratedFromRaw: (
         rawPoolProtocolFeesGenerated: RawPoolProtocolFeesGenerated,
     ): PoolProtocolFeesGenerated => {
-        const { pool_id, seven_day_protocol_fees_generated_in_eth, seven_day_number_of_fills } = rawPoolProtocolFeesGenerated;
+        const {
+            pool_id,
+            seven_day_protocol_fees_generated_in_eth,
+            seven_day_number_of_fills,
+        } = rawPoolProtocolFeesGenerated;
         return {
             poolId: pool_id,
             sevenDayProtocolFeesGeneratedInEth: Number(seven_day_protocol_fees_generated_in_eth || 0),
@@ -145,6 +191,23 @@ export const stakingUtils = {
         rawPoolsProtocolFeesGenerated: RawPoolProtocolFeesGenerated[],
     ): PoolProtocolFeesGenerated[] => {
         return rawPoolsProtocolFeesGenerated.map(stakingUtils.getPoolProtocolFeesGeneratedFromRaw);
+    },
+    getPoolAvgRewardsFromRaw: (rawPoolAvgRewards: RawPoolAvgRewards): PoolAvgRewards => {
+        const {
+            pool_id,
+            avg_member_reward_in_eth,
+            avg_total_reward_in_eth,
+            avg_member_reward_eth_per_zrx,
+        } = rawPoolAvgRewards;
+        return {
+            poolId: pool_id,
+            avgMemberRewardInEth: Number(avg_member_reward_in_eth || 0),
+            avgTotalRewardInEth: Number(avg_total_reward_in_eth || 0),
+            avgMemberRewardEthPerZrx: Number(avg_member_reward_eth_per_zrx || 0),
+        };
+    },
+    getPoolsAvgRewardsFromRaw: (rawPoolsAvgRewards: RawPoolAvgRewards[]): PoolAvgRewards[] => {
+        return rawPoolsAvgRewards.map(stakingUtils.getPoolAvgRewardsFromRaw);
     },
     getZrxStakedFromRawDelegatorDeposited: (rawDelegatorDeposited: RawDelegatorDeposited[]): number => {
         const resultRow: RawDelegatorDeposited | undefined = _.head(rawDelegatorDeposited);
@@ -173,6 +236,18 @@ export const stakingUtils = {
         }));
 
         return poolData;
+    },
+    getDelegatorEventsFromRaw: (rawDelegatorEvents: RawDelegatorEvent[]): DelegatorEvent[] => {
+        const delegatorEvents: DelegatorEvent[] = rawDelegatorEvents.map(rawEvent => ({
+            eventType: rawEvent.event_type,
+            address: rawEvent.address,
+            blockNumber: rawEvent.block_number === null ? null : Number(rawEvent.block_number),
+            eventTimestamp: rawEvent.event_timestamp,
+            transactionHash: rawEvent.transaction_hash,
+            eventArgs: rawEvent.event_args,
+        }));
+
+        return delegatorEvents;
     },
     getAlltimePoolRewards: (
         rawAllTimePoolRewards?: RawAllTimePoolRewards,

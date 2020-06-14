@@ -112,7 +112,7 @@ export const TokenMetadatasForChains: TokenMetadataAndChainAddresses[] = [
         symbol: 'SUSD',
         name: 'sUSD',
         tokenAddresses: {
-            [ChainId.Mainnet]: '0x57ab1e02fee23774580c119740129eac7081e9d3',
+            [ChainId.Mainnet]: '0x57ab1ec28d129707052df4df418d58a2d46d5f51',
             [ChainId.Kovan]: NULL_ADDRESS,
             [ChainId.Ganache]: NULL_ADDRESS,
         },
@@ -379,7 +379,7 @@ export const TokenMetadatasForChains: TokenMetadataAndChainAddresses[] = [
     },
     {
         decimals: 8,
-        symbol: 'cSAI',
+        symbol: 'cDAI',
         name: 'Compound Dai',
         tokenAddresses: {
             [ChainId.Mainnet]: '0x5d3a536e4d6dbd6114cc1ead35777bab948e3643',
@@ -478,11 +478,11 @@ export const TokenMetadatasForChains: TokenMetadataAndChainAddresses[] = [
         },
     },
     {
-        decimals: 18,
-        symbol: 'BNB',
-        name: 'Binance Coin',
+        decimals: 8,
+        symbol: 'UBT',
+        name: 'UniBright',
         tokenAddresses: {
-            [ChainId.Mainnet]: '0xb8c77482e45f1f44de1745f52c74426c631bdd52',
+            [ChainId.Mainnet]: '0x8400d94a5cb0fa0d041a3788e395285d61c9ee5e',
             [ChainId.Kovan]: NULL_ADDRESS,
             [ChainId.Ganache]: NULL_ADDRESS,
         },
@@ -635,6 +635,36 @@ export const TokenMetadatasForChains: TokenMetadataAndChainAddresses[] = [
             [ChainId.Mainnet]: '0xdac17f958d2ee523a2206206994597c13d831ec7',
             [ChainId.Kovan]: NULL_ADDRESS,
             [ChainId.Ganache]: NULL_ADDRESS,
+        },
+    },
+    {
+        symbol: 'ZWETH',
+        name: 'Custom Kovan Wrapped Ether',
+        decimals: 18,
+        tokenAddresses: {
+            [ChainId.Mainnet]: NULL_ADDRESS,
+            [ChainId.Kovan]: '0x1FcAf05ABa8c7062D6F08E25c77Bf3746fCe5433',
+            [ChainId.Ganache]: NULL_ADDRESS,
+        },
+    },
+    {
+        symbol: 'ZUSDC',
+        name: 'Custom Kovan USD Coin',
+        decimals: 6,
+        tokenAddresses: {
+            [ChainId.Mainnet]: NULL_ADDRESS,
+            [ChainId.Kovan]: '0x5a719Cf3E02c17c876F6d294aDb5CB7C6eB47e2F',
+            [ChainId.Ganache]: NULL_ADDRESS,
+        },
+    },
+    {
+        symbol: 'GST2',
+        name: 'Gas Token 2',
+        decimals: 2,
+        tokenAddresses: {
+            [ChainId.Mainnet]: '0x0000000000b3f879cb30fe243b4dfee438691c04',
+            [ChainId.Kovan]: NULL_ADDRESS,
+            [ChainId.Ganache]: '0xbe0037eaf2d64fe5529bca93c18c9702d3930376',
         },
     },
 ];

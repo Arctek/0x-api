@@ -1,7 +1,10 @@
-import { AddedRemovedOrders, APIOrder, OrderSet, OrderStore } from '@0x/asset-swapper';
+import { APIOrder, OrderSet, OrderStore } from '@0x/asset-swapper';
 
+import { SWAP_IGNORED_ADDRESSES } from '../config';
 import { FIRST_PAGE } from '../constants';
 import { OrderBookService } from '../services/orderbook_service';
+
+import { orderUtils } from './order_utils';
 
 const MAX_QUERY_SIZE = 1000;
 export class OrderStoreDbAdapter extends OrderStore {
@@ -23,15 +26,12 @@ export class OrderStoreDbAdapter extends OrderStore {
             assetB,
         );
         const orderSet = new OrderSet();
-        await orderSet.addManyAsync([...bids.records, ...asks.records]);
+        const allOrders = [...bids.records, ...asks.records];
+        const allowedOrders = allOrders.filter(
+            apiOrder => !orderUtils.isIgnoredOrder(SWAP_IGNORED_ADDRESSES, apiOrder),
+        );
+        await orderSet.addManyAsync(allowedOrders);
         return orderSet;
-    }
-    public async updateAsync(addedRemoved: AddedRemovedOrders): Promise<void> {
-        const { added } = addedRemoved;
-        for (const order of added) {
-            await this._orderbookService.addOrderAsync(order.order);
-        }
-        // Currently not handling deletes as this is handled by Mesh
     }
     public async getBatchOrderSetsForAssetsAsync(
         makerAssetDatas: string[],
@@ -47,8 +47,11 @@ export class OrderStoreDbAdapter extends OrderStore {
         makerAssetDatas.forEach(m =>
             takerAssetDatas.forEach(t => (orderSets[OrderStore.getKeyForAssetPair(m, t)] = new OrderSet())),
         );
+        const allowedOrders = apiOrders.filter(
+            apiOrder => !orderUtils.isIgnoredOrder(SWAP_IGNORED_ADDRESSES, apiOrder),
+        );
         await Promise.all(
-            apiOrders.map(async o =>
+            allowedOrders.map(async o =>
                 orderSets[OrderStore.getKeyForAssetPair(o.order.makerAssetData, o.order.takerAssetData)].addAsync(o),
             ),
         );

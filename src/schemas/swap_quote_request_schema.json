@@ -16,11 +16,22 @@
         "gasPrice": {
             "$ref": "/wholeNumberSchema"
         },
-        "slippage": {
+        "slippagePercentage": {
             "$ref": "/numberSchema"
         },
         "excludedSources": {
             "type": "string"
+        },
+        "apiKey": {
+            "type": "string"
+        },
+        "intentOnFilling": {
+            "type": "string",
+            "enum": ["true", "false"]
+        },
+        "skipValidation": {
+            "type": "string",
+            "enum": ["true", "false"]
         }
     },
     "required": ["sellToken", "buyToken"],

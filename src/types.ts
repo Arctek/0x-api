@@ -1,6 +1,12 @@
-import { ERC20BridgeSource, ExtensionContractType } from '@0x/asset-swapper';
+import { ERC20BridgeSource, MarketBuySwapQuote, MarketSellSwapQuote, SupportedProvider } from '@0x/asset-swapper';
 import { AcceptedOrderInfo, RejectedOrderInfo } from '@0x/mesh-rpc-client';
-import { APIOrder, OrdersChannelSubscriptionOpts, SignedOrder, UpdateOrdersChannelMessage } from '@0x/types';
+import {
+    APIOrder,
+    OrdersChannelSubscriptionOpts,
+    SignedOrder,
+    UpdateOrdersChannelMessage,
+    ZeroExTransaction,
+} from '@0x/types';
 import { BigNumber } from '@0x/utils';
 
 export enum OrderWatcherLifeCycleEvents {
@@ -67,7 +73,12 @@ export interface RawEpoch {
     ending_block_timestamp?: null;
     zrx_deposited?: string;
     zrx_staked?: string;
-    protocol_fees_generated_in_eth?: string;
+}
+
+// Separating out the response with fees
+// As this is a significantly heavier query (it has to sum over fills)
+export interface RawEpochWithFees extends RawEpoch {
+    protocol_fees_generated_in_eth: string;
 }
 
 export interface TransactionDate {
@@ -82,6 +93,9 @@ export interface Epoch {
     epochEnd?: TransactionDate;
     zrxStaked: number;
     zrxDeposited: number;
+}
+
+export interface EpochWithFees extends Epoch {
     protocolFeesGeneratedInEth: number;
 }
 
@@ -92,7 +106,7 @@ export interface RawPool {
     created_at_transaction_hash: string;
     created_at_transaction_index: string;
     maker_addresses: string[];
-    verified?: boolean;
+    isVerified?: boolean;
     logo_url?: string;
     location?: string;
     bio?: string;
@@ -135,6 +149,9 @@ export interface PoolWithStats extends Pool {
     currentEpochStats: EpochPoolStats;
     nextEpochStats: EpochPoolStats;
     sevenDayProtocolFeesGeneratedInEth: number;
+    avgMemberRewardInEth: number;
+    avgTotalRewardInEth: number;
+    avgMemberRewardEthPerZrx: number;
 }
 
 export interface PoolWithHistoricalStats extends PoolWithStats {
@@ -147,6 +164,8 @@ export interface RawEpochPoolStats {
     maker_addresses: string[];
     operator_share?: string;
     zrx_staked?: string;
+    operator_zrx_staked?: string;
+    member_zrx_staked?: string;
     total_staked?: string;
     share_of_stake?: string;
     total_protocol_fees_generated_in_eth?: string;
@@ -159,6 +178,8 @@ export interface RawEpochPoolStats {
 export interface EpochPoolStats {
     poolId: string;
     zrxStaked: number;
+    operatorZrxStaked: number;
+    memberZrxStaked: number;
     shareOfStake: number;
     operatorShare?: number;
     makerAddresses: string[];
@@ -185,6 +206,21 @@ export interface RawPoolProtocolFeesGenerated {
     pool_id: string;
     seven_day_protocol_fees_generated_in_eth: string;
     seven_day_number_of_fills: string;
+}
+
+export interface RawPoolAvgRewards {
+    pool_id: string;
+    avg_member_reward_in_eth: string;
+    avg_total_reward_in_eth: string;
+    avg_member_stake: string;
+    avg_member_reward_eth_per_zrx: string;
+}
+
+export interface PoolAvgRewards {
+    poolId: string;
+    avgMemberRewardInEth: number;
+    avgTotalRewardInEth: number;
+    avgMemberRewardEthPerZrx: number;
 }
 
 export interface RawPoolTotalProtocolFeesGenerated {
@@ -273,8 +309,29 @@ export interface StakingEpochsResponse {
     currentEpoch: Epoch;
     nextEpoch: Epoch;
 }
+export interface StakingEpochsWithFeesResponse {
+    currentEpoch: EpochWithFees;
+    nextEpoch: EpochWithFees;
+}
 export interface StakingStatsResponse {
     allTime: AllTimeStakingStats;
+}
+
+export interface RawDelegatorEvent {
+    event_type: string;
+    address: string;
+    block_number: string | null;
+    event_timestamp: string;
+    transaction_hash: string | null;
+    event_args: object;
+}
+export interface DelegatorEvent {
+    eventType: string;
+    address: string;
+    blockNumber: number | null;
+    eventTimestamp: string;
+    transactionHash: string | null;
+    eventArgs: object;
 }
 
 export interface ObjectMap<T> {
@@ -293,22 +350,38 @@ export interface TokenMetadata {
     tokenAddress: string;
 }
 
-export interface GetSwapQuoteResponse {
-    price: BigNumber;
+export interface GasTokenRefundInfo {
+    usedGasTokens: number;
+    gasTokenGasCost: BigNumber;
+    gasTokenRefund: BigNumber;
+}
+
+export interface SwapQuoteResponsePartialTransaction {
     to: string;
     data: string;
+    value: BigNumber;
+}
+
+export interface SwapQuoteResponsePrice {
+    price: BigNumber;
+    guaranteedPrice: BigNumber;
+}
+
+export interface GetSwapQuoteResponse extends SwapQuoteResponsePartialTransaction, SwapQuoteResponsePrice {
     gasPrice: BigNumber;
     protocolFee: BigNumber;
+    minimumProtocolFee: BigNumber;
     orders: SignedOrder[];
     buyAmount: BigNumber;
     sellAmount: BigNumber;
     buyTokenAddress: string;
     sellTokenAddress: string;
-    value: BigNumber;
     sources: GetSwapQuoteResponseLiquiditySource[];
-    gas?: BigNumber;
     from?: string;
     extensionContractType: ExtensionContractType
+    gas: BigNumber;
+    estimatedGas: BigNumber;
+    estimatedGasTokenRefund: BigNumber;
 }
 
 export interface Price {
@@ -316,7 +389,71 @@ export interface Price {
     price: BigNumber;
 }
 
+interface BasePriceResponse {
+    price: BigNumber;
+    buyAmount: BigNumber;
+    sellAmount: BigNumber;
+    sellTokenAddress: string;
+    buyTokenAddress: string;
+    sources: GetSwapQuoteResponseLiquiditySource[];
+    value: BigNumber;
+    gasPrice: BigNumber;
+    gas: BigNumber;
+    estimatedGas: BigNumber;
+    protocolFee: BigNumber;
+    estimatedGasTokenRefund: BigNumber;
+    minimumProtocolFee: BigNumber;
+}
+
+export interface GetSwapPriceResponse extends BasePriceResponse {}
+
 export type GetTokenPricesResponse = Price[];
+
+export interface GetMetaTransactionQuoteResponse extends BasePriceResponse {
+    zeroExTransactionHash: string;
+    zeroExTransaction: ZeroExTransaction;
+    orders: SignedOrder[];
+}
+
+export interface GetMetaTransactionPriceResponse extends BasePriceResponse {}
+
+export interface GetMetaTransactionStatusResponse {
+    refHash: string;
+    hash?: string;
+    status: string;
+    gasPrice?: BigNumber;
+    updatedAt?: Date;
+    blockNumber?: number;
+    expectedMinedInSec?: number;
+    ethereumTxStatus?: number;
+}
+
+// takerAddress, sellAmount, buyAmount, swapQuote, price
+export interface CalculateMetaTransactionPriceResponse {
+    price: BigNumber;
+    buyAmount: BigNumber | undefined;
+    sellAmount: BigNumber | undefined;
+    takerAddress: string;
+    swapQuote: MarketSellSwapQuote | MarketBuySwapQuote;
+    sources: GetSwapQuoteResponseLiquiditySource[];
+    gasPrice: BigNumber;
+    protocolFee: BigNumber;
+    minimumProtocolFee: BigNumber;
+    estimatedGas: BigNumber;
+}
+
+export interface PostTransactionResponse {
+    ethereumTransactionHash: string;
+    zeroExTransactionHash: string;
+}
+
+export interface ZeroExTransactionWithoutDomain {
+    salt: BigNumber;
+    expirationTimeSeconds: BigNumber;
+    gasPrice: BigNumber;
+    signerAddress: string;
+    data: string;
+}
 
 export interface GetSwapQuoteRequestParams {
     sellToken: string;
@@ -328,6 +465,22 @@ export interface GetSwapQuoteRequestParams {
     gasPrice?: BigNumber;
     excludedSources?: ERC20BridgeSource[];
     affiliateAddress?: string;
+    rfqt?: {
+        intentOnFilling?: boolean;
+        isIndicative?: boolean;
+    };
+    skipValidation: boolean;
+    apiKey?: string;
+}
+
+export interface GetTransactionRequestParams {
+    takerAddress: string;
+    sellToken: string;
+    buyToken: string;
+    sellAmount?: BigNumber;
+    buyAmount?: BigNumber;
+    slippagePercentage?: number;
+    excludedSources?: ERC20BridgeSource[];
 }
 
 export interface CalculateSwapQuoteParams {
@@ -341,9 +494,80 @@ export interface CalculateSwapQuoteParams {
     gasPrice?: BigNumber;
     excludedSources?: ERC20BridgeSource[];
     affiliateAddress?: string;
+    apiKey?: string;
+    rfqt?: {
+        intentOnFilling?: boolean;
+        isIndicative?: boolean;
+        skipBuyRequests?: boolean;
+    };
+    skipValidation: boolean;
 }
 
 export interface GetSwapQuoteResponseLiquiditySource {
     name: string;
     proportion: BigNumber;
 }
+
+export interface PinResult {
+    pin: SignedOrder[];
+    doNotPin: SignedOrder[];
+}
+
+export interface CalculateMetaTransactionQuoteParams {
+    takerAddress: string;
+    buyTokenAddress: string;
+    sellTokenAddress: string;
+    buyAmount: BigNumber | undefined;
+    sellAmount: BigNumber | undefined;
+    from: string | undefined;
+    slippagePercentage?: number;
+    excludedSources?: ERC20BridgeSource[];
+    apiKey: string | undefined;
+}
+
+export enum TransactionStates {
+    // transaction has been constructed, but not yet submitted to the network.
+    Unsubmitted = 'unsubmitted',
+    // transaction has been submitted to the network.
+    Submitted = 'submitted',
+    // transaction has been spotted in the mempool.
+    Mempool = 'mempool',
+    // transaction has not been mined in the expected time.
+    Stuck = 'stuck',
+    // transaction has been mined.
+    Included = 'included',
+    // transaction is confirmed.
+    Confirmed = 'confirmed',
+    // transaction is no longer in the mempool.
+    Dropped = 'dropped',
+    // transaction has been aborted because a new transaction with the same
+    // nonce has been mined.
+    Aborted = 'aborted',
+    // transaction was in an unsubmitted state for too long.
+    Cancelled = 'cancelled',
+}
+
+export interface TransactionWatcherSignerStatus {
+    live: boolean;
+    timeSinceEpoch: number;
+    gasPrice: number;
+    maxGasPrice: number;
+    balances: {
+        [address: string]: number;
+    };
+}
+
+export interface TransactionWatcherSignerServiceConfig {
+    provider: SupportedProvider;
+    chainId: number;
+    signerPrivateKeys: string[];
+    expectedMinedInSec: number;
+    isSigningEnabled: boolean;
+    maxGasPriceGwei: BigNumber;
+    minSignerEthBalance: number;
+    transactionPollingIntervalMs: number;
+    heartbeatIntervalMs: number;
+    unstickGasMultiplier: number;
+    numBlocksUntilConfirmed: number;
+}
+// tslint:disable-line:max-file-line-count

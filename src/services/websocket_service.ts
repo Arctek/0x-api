@@ -1,5 +1,4 @@
 import { schemas } from '@0x/json-schemas';
-import { WSClient } from '@0x/mesh-rpc-client';
 import { assetDataUtils } from '@0x/order-utils';
 import {
     APIOrder,
@@ -14,7 +13,9 @@ import * as http from 'http';
 import * as _ from 'lodash';
 import * as WebSocket from 'ws';
 
-import { MalformedJSONError, NotImplementedError } from '../errors';
+import { MESH_IGNORED_ADDRESSES } from '../config';
+import { MalformedJSONError, NotImplementedError, WebsocketServiceError } from '../errors';
+import { logger } from '../logger';
 import { generateError } from '../middleware/error_handling';
 import {
     MessageChannels,
@@ -23,6 +24,7 @@ import {
     UpdateOrdersChannelMessageWithChannel,
     WebsocketSRAOpts,
 } from '../types';
+import { MeshClient } from '../utils/mesh_client';
 import { meshUtils } from '../utils/mesh_utils';
 import { orderUtils } from '../utils/order_utils';
 import { schemaUtils } from '../utils/schema_utils';
@@ -47,7 +49,7 @@ type ALL_SUBSCRIPTION_OPTS = 'ALL_SUBSCRIPTION_OPTS';
  */
 export class WebsocketService {
     private readonly _server: WebSocket.Server;
-    private readonly _meshClient: WSClient;
+    private readonly _meshClient: MeshClient;
     private readonly _pongIntervalId: number;
     private readonly _requestIdToSocket: Map<string, WrappedWebSocket> = new Map(); // requestId to WebSocket mapping
     private readonly _requestIdToSubscriptionOpts: Map<
@@ -115,13 +117,17 @@ export class WebsocketService {
         // takerAssetProxyId?: string;
         return false;
     }
-    constructor(server: http.Server, meshClient: WSClient, opts?: Partial<WebsocketSRAOpts>) {
+    private static _handleError(_ws: WrappedWebSocket, err: Error): void {
+        logger.error(new WebsocketServiceError(err));
+    }
+    constructor(server: http.Server, meshClient: MeshClient, opts?: Partial<WebsocketSRAOpts>) {
         const wsOpts: WebsocketSRAOpts = {
             ...DEFAULT_OPTS,
             ...opts,
         };
         this._server = new WebSocket.Server({ server, path: wsOpts.path });
         this._server.on('connection', this._processConnection.bind(this));
+        this._server.on('error', WebsocketService._handleError.bind(this));
         this._pongIntervalId = setInterval(this._cleanupConnections.bind(this), wsOpts.pongInterval);
         this._meshClient = meshClient;
         // tslint:disable-next-line:no-floating-promises
@@ -129,7 +135,7 @@ export class WebsocketService {
             .subscribeToOrdersAsync(e => this.orderUpdate(meshUtils.orderInfosToApiOrders(e)))
             .then(subscriptionId => (this._meshSubscriptionId = subscriptionId));
     }
-    public destroy(): void {
+    public async destroyAsync(): Promise<void> {
         clearInterval(this._pongIntervalId);
         for (const ws of this._server.clients) {
             ws.terminate();
@@ -138,7 +144,11 @@ export class WebsocketService {
         this._requestIdToSubscriptionOpts.clear();
         this._server.close();
         if (this._meshSubscriptionId) {
-            void this._meshClient.unsubscribeAsync(this._meshSubscriptionId);
+            try {
+                await this._meshClient.unsubscribeAsync(this._meshSubscriptionId);
+            } finally {
+                delete this._meshSubscriptionId;
+            }
         }
     }
     public orderUpdate(apiOrders: APIOrder[]): void {
@@ -150,7 +160,10 @@ export class WebsocketService {
             channel: MessageChannels.Orders,
             payload: apiOrders,
         };
-        for (const order of apiOrders) {
+        const allowedOrders = apiOrders.filter(
+            apiOrder => !orderUtils.isIgnoredOrder(MESH_IGNORED_ADDRESSES, apiOrder),
+        );
+        for (const order of allowedOrders) {
             // Future optimisation is to invert this structure so the order isn't duplicated over many request ids
             // order->requestIds it is less likely to get multiple order updates and more likely
             // to have many subscribers and a single order

@@ -7,16 +7,20 @@ import {
     AllTimeDelegatorStats,
     AllTimePoolStats,
     AllTimeStakingStats,
+    DelegatorEvent,
     Epoch,
     EpochDelegatorStats,
+    EpochWithFees,
     Pool,
     PoolEpochRewards,
     PoolWithStats,
     RawAllTimePoolRewards,
     RawAllTimeStakingStats,
     RawDelegatorDeposited,
+    RawDelegatorEvent,
     RawDelegatorStaked,
     RawEpoch,
+    RawEpochWithFees,
     RawPool,
     RawPoolEpochRewards,
     RawPoolTotalProtocolFeesGenerated,
@@ -30,6 +34,26 @@ export class StakingDataService {
         this._connection = connection;
     }
 
+    public async getEpochNAsync(epochId: number): Promise<Epoch> {
+        const rawEpoch: RawEpoch | undefined = _.head(await this._connection.query(queries.epochNQuery, [epochId]));
+        if (!rawEpoch) {
+            throw new Error(`Could not find epoch ${epochId}`);
+        }
+        const epoch = stakingUtils.getEpochFromRaw(rawEpoch);
+        return epoch;
+    }
+
+    public async getEpochNWithFeesAsync(epochId: number): Promise<Epoch> {
+        const rawEpochWithFees: RawEpochWithFees | undefined = _.head(
+            await this._connection.query(queries.epochNWithFeesQuery, [epochId]),
+        );
+        if (!rawEpochWithFees) {
+            throw new Error(`Could not find epoch ${epochId}`);
+        }
+        const epoch = stakingUtils.getEpochWithFeesFromRaw(rawEpochWithFees);
+        return epoch;
+    }
+
     public async getCurrentEpochAsync(): Promise<Epoch> {
         const rawEpoch: RawEpoch | undefined = _.head(await this._connection.query(queries.currentEpochQuery));
         if (!rawEpoch) {
@@ -39,12 +63,32 @@ export class StakingDataService {
         return epoch;
     }
 
+    public async getCurrentEpochWithFeesAsync(): Promise<EpochWithFees> {
+        const rawEpochWithFees: RawEpochWithFees | undefined = _.head(
+            await this._connection.query(queries.currentEpochWithFeesQuery),
+        );
+        if (!rawEpochWithFees) {
+            throw new Error('Could not find the current epoch.');
+        }
+        const epoch = stakingUtils.getEpochWithFeesFromRaw(rawEpochWithFees);
+        return epoch;
+    }
+
     public async getNextEpochAsync(): Promise<Epoch> {
         const rawEpoch: RawEpoch | undefined = _.head(await this._connection.query(queries.nextEpochQuery));
         if (!rawEpoch) {
-            throw new Error('Could not find the next current epoch.');
+            throw new Error('Could not find the next epoch.');
         }
         const epoch = stakingUtils.getEpochFromRaw(rawEpoch);
+        return epoch;
+    }
+
+    public async getNextEpochWithFeesAsync(): Promise<EpochWithFees> {
+        const rawEpoch: RawEpochWithFees | undefined = _.head(await this._connection.query(queries.nextEpochQuery));
+        if (!rawEpoch) {
+            throw new Error('Could not find the next epoch.');
+        }
+        const epoch = stakingUtils.getEpochWithFeesFromRaw(rawEpoch);
         return epoch;
     }
 
@@ -111,11 +155,13 @@ export class StakingDataService {
             rawCurrentEpochPoolStats,
             rawNextEpochPoolStats,
             rawPoolSevenDayProtocolFeesGenerated,
+            rawAvgReward,
         ] = await Promise.all([
             this.getStakingPoolAsync(poolId),
             this._connection.query(queries.currentEpochPoolStatsQuery, [poolId]),
             this._connection.query(queries.nextEpochPoolStatsQuery, [poolId]),
             this._connection.query(queries.poolSevenDayProtocolFeesGeneratedQuery, [poolId]),
+            this._connection.query(queries.poolAvgRewardsQuery, [poolId]),
         ]);
 
         const currentEpochPoolStats = stakingUtils.getEpochPoolStatsFromRaw(rawCurrentEpochPoolStats[0]);
@@ -123,10 +169,14 @@ export class StakingDataService {
         const pool7dProtocolFeesGenerated = stakingUtils.getPoolProtocolFeesGeneratedFromRaw(
             rawPoolSevenDayProtocolFeesGenerated[0],
         );
+        const poolAvgReward = stakingUtils.getPoolAvgRewardsFromRaw(rawAvgReward[0]);
 
         return {
             ...pool,
             sevenDayProtocolFeesGeneratedInEth: pool7dProtocolFeesGenerated.sevenDayProtocolFeesGeneratedInEth,
+            avgMemberRewardInEth: poolAvgReward.avgMemberRewardInEth,
+            avgTotalRewardInEth: poolAvgReward.avgTotalRewardInEth,
+            avgMemberRewardEthPerZrx: poolAvgReward.avgMemberRewardEthPerZrx,
             currentEpochStats: currentEpochPoolStats,
             nextEpochStats: nextEpochPoolStats,
         };
@@ -138,24 +188,31 @@ export class StakingDataService {
             rawCurrentEpochPoolStats,
             rawNextEpochPoolStats,
             rawPoolSevenDayProtocolFeesGenerated,
+            rawPoolsAvgRewards,
         ] = await Promise.all([
             this.getStakingPoolsAsync(),
             this._connection.query(queries.currentEpochPoolsStatsQuery),
             this._connection.query(queries.nextEpochPoolsStatsQuery),
             this._connection.query(queries.sevenDayProtocolFeesGeneratedQuery),
+            this._connection.query(queries.poolsAvgRewardsQuery),
         ]);
         const currentEpochPoolStats = stakingUtils.getEpochPoolsStatsFromRaw(rawCurrentEpochPoolStats);
         const nextEpochPoolStats = stakingUtils.getEpochPoolsStatsFromRaw(rawNextEpochPoolStats);
         const poolProtocolFeesGenerated = stakingUtils.getPoolsProtocolFeesGeneratedFromRaw(
             rawPoolSevenDayProtocolFeesGenerated,
         );
+        const poolAvgRewards = stakingUtils.getPoolsAvgRewardsFromRaw(rawPoolsAvgRewards);
         const currentEpochPoolStatsMap = utils.arrayToMapWithId(currentEpochPoolStats, 'poolId');
         const nextEpochPoolStatsMap = utils.arrayToMapWithId(nextEpochPoolStats, 'poolId');
         const poolProtocolFeesGeneratedMap = utils.arrayToMapWithId(poolProtocolFeesGenerated, 'poolId');
+        const poolAvgRewardsMap = utils.arrayToMapWithId(poolAvgRewards, 'poolId');
         return pools.map(pool => ({
             ...pool,
             sevenDayProtocolFeesGeneratedInEth:
                 poolProtocolFeesGeneratedMap[pool.poolId].sevenDayProtocolFeesGeneratedInEth,
+            avgMemberRewardInEth: poolAvgRewardsMap[pool.poolId].avgMemberRewardInEth,
+            avgTotalRewardInEth: poolAvgRewardsMap[pool.poolId].avgTotalRewardInEth,
+            avgMemberRewardEthPerZrx: poolAvgRewardsMap[pool.poolId].avgMemberRewardEthPerZrx,
             currentEpochStats: currentEpochPoolStatsMap[pool.poolId],
             nextEpochStats: nextEpochPoolStatsMap[pool.poolId],
         }));
@@ -197,6 +254,16 @@ export class StakingDataService {
             zrxStaked,
             poolData,
         };
+    }
+
+    public async getDelegatorEventsAsync(delegatorAddress: string): Promise<DelegatorEvent[]> {
+        const rawDelegatorEvents: RawDelegatorEvent[] = await this._connection.query(queries.delegatorEventsQuery, [
+            delegatorAddress,
+        ]);
+
+        const delegatorEvents = stakingUtils.getDelegatorEventsFromRaw(rawDelegatorEvents);
+
+        return delegatorEvents;
     }
 
     public async getDelegatorAllTimeStatsAsync(delegatorAddress: string): Promise<AllTimeDelegatorStats> {

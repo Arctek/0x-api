@@ -1,6 +1,8 @@
-import { ObjectMap } from '@0x/types';
+import { ObjectMap, SignedOrder } from '@0x/types';
 import { RevertError } from '@0x/utils';
 import * as HttpStatus from 'http-status-codes';
+
+import { ONE_SECOND_MS } from './constants';
 
 // tslint:disable:max-classes-per-file
 
@@ -61,6 +63,11 @@ export class NotImplementedError extends BadRequestError {
     public generalErrorCode = GeneralErrorCodes.NotImplemented;
 }
 
+export class InvalidAPIKeyError extends BadRequestError {
+    public statusCode = HttpStatus.BAD_REQUEST;
+    public generalErrorCode = GeneralErrorCodes.InvalidAPIKey;
+}
+
 export class NotFoundError extends APIBaseError {
     public statusCode = HttpStatus.NOT_FOUND;
 }
@@ -89,6 +96,9 @@ export enum GeneralErrorCodes {
     Throttled = 103,
     NotImplemented = 104,
     TransactionInvalid = 105,
+    UnableToSubmitOnBehalfOfTaker = 106,
+    InvalidAPIKey = 107,
+    ServiceDisabled = 108,
 }
 
 export const generalErrorCodeToReason: { [key in GeneralErrorCodes]: string } = {
@@ -98,6 +108,9 @@ export const generalErrorCodeToReason: { [key in GeneralErrorCodes]: string } = 
     [GeneralErrorCodes.Throttled]: 'Throttled',
     [GeneralErrorCodes.NotImplemented]: 'Not Implemented',
     [GeneralErrorCodes.TransactionInvalid]: 'Transaction Invalid',
+    [GeneralErrorCodes.UnableToSubmitOnBehalfOfTaker]: 'Unable to submit transaction on behalf of taker',
+    [GeneralErrorCodes.InvalidAPIKey]: 'Invalid API key',
+    [GeneralErrorCodes.ServiceDisabled]: 'Service disabled',
 };
 
 export enum ValidationErrorCodes {
@@ -110,4 +123,38 @@ export enum ValidationErrorCodes {
     UnsupportedOption = 1006,
     InvalidOrder = 1007,
     InternalError = 1008,
+    TokenNotSupported = 1009,
+}
+
+export enum ValidationErrorReasons {
+    PercentageOutOfRange = 'MUST_BE_LESS_THAN_OR_EQUAL_TO_ONE',
+}
+export abstract class AlertError {
+    public abstract message: string;
+    public shouldAlert: boolean = true;
+}
+
+export class ExpiredOrderError extends AlertError {
+    public message = `Found expired order!`;
+    public expiry: number;
+    public expiredForSeconds: number;
+    constructor(public order: SignedOrder, public currentThreshold: number, public details?: string) {
+        super();
+        this.expiry = order.expirationTimeSeconds.toNumber();
+        this.expiredForSeconds = Date.now() / ONE_SECOND_MS - this.expiry;
+    }
+}
+
+export class OrderWatcherSyncError extends AlertError {
+    public message = `Error syncing OrderWatcher!`;
+    constructor(public details?: string) {
+        super();
+    }
+}
+
+export class WebsocketServiceError extends AlertError {
+    public message = 'Error in the Websocket service!';
+    constructor(public error: Error) {
+        super();
+    }
 }
