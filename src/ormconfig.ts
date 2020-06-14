@@ -1,13 +1,13 @@
 import { ConnectionOptions } from 'typeorm';
 
-import { POSTGRES_URI } from './config';
+import { DATABASE_URI } from './config';
 import { KeyValueEntity, SignedOrderEntity, TransactionEntity } from './entities';
 
 const entities = [SignedOrderEntity, TransactionEntity, KeyValueEntity];
 
 export const config: ConnectionOptions = {
     type: 'mysql',
-    url: POSTGRES_URI,
+    url: DATABASE_URI,
     entities,
     synchronize: true,
     logging: true,
