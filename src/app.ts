@@ -19,6 +19,7 @@ import { TransactionWatcherSignerService } from './services/transaction_watcher_
 import { WebsocketSRAOpts } from './types';
 import { MeshClient } from './utils/mesh_client';
 import { OrderStoreDbAdapter } from './utils/order_store_db_adapter';
+import { fetchAndCacheTokenMetadataAsync } from './utils/token_metadata_utils';
 import { OrderbookMode } from './types';
 
 export interface AppDependencies {
@@ -49,6 +50,7 @@ export async function getDefaultAppDependenciesAsync(
         ORDERBOOK_MODE: OrderbookMode;
         SRA_WEBSOCKET_URI?: string;
         SRA_HTTP_URI?: string;
+        TOKEN_DATA_URI?: string;
         ENABLE_PROMETHEUS_METRICS: boolean;
     },
 ): Promise<AppDependencies> {
@@ -85,6 +87,11 @@ export async function getDefaultAppDependenciesAsync(
     const metaTransactionService = createMetaTxnServiceFromOrderBookService(orderBookService, provider, connection);
 
     const websocketOpts = { path: SRA_PATH };
+
+    if (config.TOKEN_DATA_URI) {
+        const cachedTokens = await fetchAndCacheTokenMetadataAsync(config.TOKEN_DATA_URI);
+        logger.info(`Loaded ${cachedTokens.length} tokens from ${config.TOKEN_DATA_URI}`);
+    }
 
     return {
         connection,
@@ -147,8 +154,8 @@ export function createSwapServiceFromOrderBookService(
     orderBookService: OrderBookService,
     provider: SupportedProvider,
     orderbookMode: OrderbookMode,
-    sraHttpUri?: string,
     sraWebsocketUri?: string,
+    sraHttpUri?: string,
 ): SwapService {
     const orderStore = new OrderStoreDbAdapter(orderBookService);
     let orderProvider: BaseOrderProvider;

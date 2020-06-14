@@ -8,10 +8,10 @@ export class KeyValueEntity {
     @Column({ name: 'value', type: 'varchar', nullable: true })
     public value?: string;
 
-    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
     public createdAt?: Date;
 
-    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamp' })
     public updatedAt?: Date;
 
     constructor(key: string, value?: string) {

@@ -65,7 +65,7 @@ export class TransactionEntity {
     @UpdateDateColumn({ name: 'updated_at' })
     public updatedAt?: Date;
 
-    @Column({ name: 'expected_at', type: 'timestamptz' })
+    @Column({ name: 'expected_at', type: 'timestamp' })
     public expectedAt: Date;
 
     public static make(opts: TransactionEntityOpts): TransactionEntity {

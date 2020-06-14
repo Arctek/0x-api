@@ -88,7 +88,7 @@ export async function runHttpServiceAsync(
         } catch (err) {}
 
         server = app.listen(config.SOCKET_FILE, () => {
-            logger.log(`0x API (HTTP) listeningon socket ${config.SOCKET_FILE}!`);
+            logger.info(`0x API (HTTP) listeningon socket ${config.SOCKET_FILE}!`);
 
             try {
                 fs.chmodSync(config.SOCKET_FILE as string, '777');
@@ -97,7 +97,7 @@ export async function runHttpServiceAsync(
     }
     else {
         server = app.listen(config.HTTP_PORT, () => {
-            logger.log(`0x API (HTTP) listening on port ${config.HTTP_PORT}!`);
+            logger.info(`0x API (HTTP) listening on port ${config.HTTP_PORT}!`);
         });
     }
     server.on('error', err => {

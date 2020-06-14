@@ -6,6 +6,7 @@ import * as _ from 'lodash';
 import * as validateUUID from 'uuid-validate';
 
 import {
+    DEFAULT_LOCAL_DATABASE_NAME,
     DEFAULT_LOCAL_DATABASE_URI,
     DEFAULT_EXPECTED_MINED_SEC,
     DEFAULT_FALLBACK_SLIPPAGE_PERCENTAGE,
@@ -104,7 +105,7 @@ export const ETHEREUM_RPC_URL = assertEnvVarType('ETHEREUM_RPC_URL', process.env
 
 // Mesh Endpoint
 export const MESH_WEBSOCKET_URI = _.isEmpty(process.env.MESH_WEBSOCKET_URI)
-    ? 'ws://localhost:60557'
+    ? undefined
     : assertEnvVarType('MESH_WEBSOCKET_URI', process.env.MESH_WEBSOCKET_URI, EnvVarType.Url);
 export const MESH_HTTP_URI = _.isEmpty(process.env.MESH_HTTP_URI)
     ? undefined
@@ -117,6 +118,11 @@ export const SRA_WEBSOCKET_URI = _.isEmpty(process.env.SRA_WEBSOCKET_URI)
 export const SRA_HTTP_URI = _.isEmpty(process.env.SRA_HTTP_URI)
     ? undefined
     : assertEnvVarType('SRA_HTTP_URI', process.env.SRA_HTTP_URI, EnvVarType.Url);
+
+// Additional token data endpoint
+export const TOKEN_DATA_URI = _.isEmpty(process.env.TOKEN_DATA_URI)
+    ? undefined
+    : assertEnvVarType('TOKEN_DATA_URI', process.env.TOKEN_DATA_URI, EnvVarType.Url);
 
 export const ORDERBOOK_MODE = _.isEmpty(process.env.ORDERBOOK_MODE)
     ? OrderbookMode.Mesh
@@ -146,6 +152,10 @@ export const TAKER_FEE_ASSET_DATA = _.isEmpty(process.env.TAKER_FEE_ASSET_DATA)
 export const DATABASE_URI = _.isEmpty(process.env.DATABASE_URI)
     ? DEFAULT_LOCAL_DATABASE_URI
     : assertEnvVarType('DATABASE_URI', process.env.DATABASE_URI, EnvVarType.Url);
+
+export const DATABASE_NAME = _.isEmpty(process.env.DATABASE_NAME)
+    ? DEFAULT_LOCAL_DATABASE_NAME
+    : process.env.DATABASE_NAME;
 
 // If there are any orders in the orderbook that are expired by more than x seconds, log an error
 export const MAX_ORDER_EXPIRATION_BUFFER_SECONDS: number = _.isEmpty(process.env.MAX_ORDER_EXPIRATION_BUFFER_SECONDS)
@@ -381,12 +391,12 @@ function assertEnvVarType(name: string, value: any, expectedType: EnvVarType): a
             return apiKeys;
         case EnvVarType.ServerMode:
             if (value !== ServerMode.Port && value !== ServerMode.Socket) {
-                throw new Error(`Server Mode must be PORT or SOCKET`);
+                throw new Error(`Server Mode must be PORT or SOCKET got ${value}`);
             }
             return value;
         case EnvVarType.OrderbookMode:
             if (value !== OrderbookMode.Mesh && value !== OrderbookMode.Sra) {
-                throw new Error(`Order Book Mode must be MESH or SRA`);
+                throw new Error(`Order Book Mode must be MESH or SRA got ${value}`);
             }
             return value;
 

@@ -3,6 +3,8 @@ import { ValidationError, ValidationErrorCodes } from '../errors';
 import { TokenMetadataAndChainAddresses, TokenMetadatasForChains } from '../token_metadatas_for_networks';
 import { ChainId, TokenMetadata } from '../types';
 
+let cachedTokenMetaData: TokenMetadata[] = [];
+
 /**
  * Returns a TokenMetadata instance, given either a token address or symobl and the network that the token is deployed on.
  *
@@ -27,6 +29,44 @@ export function getTokenMetadataIfExists(tokenAddressOrSymbol: string, chainId: 
             tokenAddress: entry.tokenAddresses[chainId],
         };
     }
+    else if (cachedTokenMetaData.length) {
+        let result: TokenMetadata;
+
+        if (isTokenAddress(tokenAddressOrSymbol)) {
+            result = cachedTokenMetaData.find(
+                tm => tm.tokenAddress.toLowerCase() === tokenAddressOrSymbol.toLowerCase(),
+            );
+        }
+        else {
+            const normalizedSymbol = (isETHSymbol(tokenAddressOrSymbol) ? 'WETH' : tokenAddressOrSymbol).toLowerCase();
+            result = cachedTokenMetaData.find(
+                tm => tm.symbol.toLowerCase() === normalizedSymbol,
+            );
+        }
+
+        return result;
+    }
+}
+
+/**
+ * Fetches and caches TokenMetadata from a URI endpoint.
+ *
+ * @param tokenDataUri the URI of the data endpoint
+ * @param chainId the Network ID
+ */
+export async function fetchAndCacheTokenMetadataAsync(tokenDataUri: string): Promise<TokenMetadata[]> {
+    const res = await fetch(tokenDataUri);
+    const tokenData = await res.json();
+
+    tokenData.forEach(token => {
+        cachedTokenMetaData.push({
+            symbol: token.symbol,
+            decimals: token.decimals,
+            tokenAddress: 'address' in token ? token.address : token.tokenAddress,
+        });
+    });
+
+    return tokenData;
 }
 
 /**
